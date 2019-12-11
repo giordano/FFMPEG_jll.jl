@@ -15,6 +15,7 @@ using Bzip2_jll
 using Zlib_jll
 using OpenSSL_jll
 using Opus_jll
+using JLLWrappers
 ## Global variables
 PATH = ""
 LIBPATH = ""
@@ -41,27 +42,8 @@ const ffmpeg_splitpath = ["bin", "ffmpeg"]
 ffmpeg_path = ""
 
 # ffmpeg-specific global declaration
-function ffmpeg(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true)
-    global PATH, LIBPATH
-    env_mapping = Dict{String,String}()
-    if adjust_PATH
-        if !isempty(get(ENV, "PATH", ""))
-            env_mapping["PATH"] = string(PATH, ':', ENV["PATH"])
-        else
-            env_mapping["PATH"] = PATH
-        end
-    end
-    if adjust_LIBPATH
-        if !isempty(get(ENV, LIBPATH_env, ""))
-            env_mapping[LIBPATH_env] = string(LIBPATH, ':', ENV[LIBPATH_env])
-        else
-            env_mapping[LIBPATH_env] = LIBPATH
-        end
-    end
-    withenv(env_mapping...) do
-        f(ffmpeg_path)
-    end
-end
+ffmpeg(f::Function; kwargs...) =
+    executable_wrapper(f, ffmpeg_path, PATH, LIBPATH, LIBPATH_env; kwargs...)
 
 
 # Relative path to `libavresample`
@@ -155,27 +137,8 @@ const ffprobe_splitpath = ["bin", "ffprobe"]
 ffprobe_path = ""
 
 # ffprobe-specific global declaration
-function ffprobe(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true)
-    global PATH, LIBPATH
-    env_mapping = Dict{String,String}()
-    if adjust_PATH
-        if !isempty(get(ENV, "PATH", ""))
-            env_mapping["PATH"] = string(PATH, ':', ENV["PATH"])
-        else
-            env_mapping["PATH"] = PATH
-        end
-    end
-    if adjust_LIBPATH
-        if !isempty(get(ENV, LIBPATH_env, ""))
-            env_mapping[LIBPATH_env] = string(LIBPATH, ':', ENV[LIBPATH_env])
-        else
-            env_mapping[LIBPATH_env] = LIBPATH
-        end
-    end
-    withenv(env_mapping...) do
-        f(ffprobe_path)
-    end
-end
+ffprobe(f::Function; kwargs...) =
+    executable_wrapper(f, ffprobe_path, PATH, LIBPATH, LIBPATH_env; kwargs...)
 
 
 # Relative path to `libavutil`
@@ -218,8 +181,8 @@ function __init__()
     append!(LIBPATH_list, [joinpath(Sys.BINDIR, Base.LIBDIR, "julia"), joinpath(Sys.BINDIR, Base.LIBDIR)])
     # From the list of our dependencies, generate a tuple of all the PATH and LIBPATH lists,
     # then append them to our own.
-    foreach(p -> append!(PATH_list, p), (libass_jll.PATH_list, libfdk_aac_jll.PATH_list, FriBidi_jll.PATH_list, FreeType2_jll.PATH_list, LAME_jll.PATH_list, libvorbis_jll.PATH_list, Ogg_jll.PATH_list, LibVPX_jll.PATH_list, x264_jll.PATH_list, x265_jll.PATH_list, Bzip2_jll.PATH_list, Zlib_jll.PATH_list, OpenSSL_jll.PATH_list, Opus_jll.PATH_list,))
-    foreach(p -> append!(LIBPATH_list, p), (libass_jll.LIBPATH_list, libfdk_aac_jll.LIBPATH_list, FriBidi_jll.LIBPATH_list, FreeType2_jll.LIBPATH_list, LAME_jll.LIBPATH_list, libvorbis_jll.LIBPATH_list, Ogg_jll.LIBPATH_list, LibVPX_jll.LIBPATH_list, x264_jll.LIBPATH_list, x265_jll.LIBPATH_list, Bzip2_jll.LIBPATH_list, Zlib_jll.LIBPATH_list, OpenSSL_jll.LIBPATH_list, Opus_jll.LIBPATH_list,))
+    update_path_list!(PATH_list, (libass_jll.PATH_list, libfdk_aac_jll.PATH_list, FriBidi_jll.PATH_list, FreeType2_jll.PATH_list, LAME_jll.PATH_list, libvorbis_jll.PATH_list, Ogg_jll.PATH_list, LibVPX_jll.PATH_list, x264_jll.PATH_list, x265_jll.PATH_list, Bzip2_jll.PATH_list, Zlib_jll.PATH_list, OpenSSL_jll.PATH_list, Opus_jll.PATH_list,))
+    update_path_list!(LIBPATH_list, (libass_jll.LIBPATH_list, libfdk_aac_jll.LIBPATH_list, FriBidi_jll.LIBPATH_list, FreeType2_jll.LIBPATH_list, LAME_jll.LIBPATH_list, libvorbis_jll.LIBPATH_list, Ogg_jll.LIBPATH_list, LibVPX_jll.LIBPATH_list, x264_jll.LIBPATH_list, x265_jll.LIBPATH_list, Bzip2_jll.LIBPATH_list, Zlib_jll.LIBPATH_list, OpenSSL_jll.LIBPATH_list, Opus_jll.LIBPATH_list,))
 
     global libswscale_path = normpath(joinpath(artifact_dir, libswscale_splitpath...))
 
