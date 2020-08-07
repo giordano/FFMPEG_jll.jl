@@ -27,29 +27,8 @@ const ffmpeg_splitpath = ["bin", "ffmpeg"]
 ffmpeg_path = ""
 
 # ffmpeg-specific global declaration
-function ffmpeg(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true)
-    global PATH, LIBPATH
-    env_mapping = Dict{String,String}()
-    if adjust_PATH
-        if !isempty(get(ENV, "PATH", ""))
-            env_mapping["PATH"] = string(PATH, ':', ENV["PATH"])
-        else
-            env_mapping["PATH"] = PATH
-        end
-    end
-    if adjust_LIBPATH
-        LIBPATH_base = get(ENV, LIBPATH_env, expanduser(LIBPATH_default))
-        if !isempty(LIBPATH_base)
-            env_mapping[LIBPATH_env] = string(LIBPATH, ':', LIBPATH_base)
-        else
-            env_mapping[LIBPATH_env] = LIBPATH
-        end
-    end
-    withenv(env_mapping...) do
-        f(ffmpeg_path)
-    end
-end
-
+ffmpeg(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true) =
+    executable_wrapper(f, ffmpeg_path, PATH, LIBPATH, LIBPATH_env, LIBPATH_default, adjust_PATH, adjust_LIBPATH, ':')
 
 # Relative path to `ffprobe`
 const ffprobe_splitpath = ["bin", "ffprobe"]
@@ -58,29 +37,8 @@ const ffprobe_splitpath = ["bin", "ffprobe"]
 ffprobe_path = ""
 
 # ffprobe-specific global declaration
-function ffprobe(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true)
-    global PATH, LIBPATH
-    env_mapping = Dict{String,String}()
-    if adjust_PATH
-        if !isempty(get(ENV, "PATH", ""))
-            env_mapping["PATH"] = string(PATH, ':', ENV["PATH"])
-        else
-            env_mapping["PATH"] = PATH
-        end
-    end
-    if adjust_LIBPATH
-        LIBPATH_base = get(ENV, LIBPATH_env, expanduser(LIBPATH_default))
-        if !isempty(LIBPATH_base)
-            env_mapping[LIBPATH_env] = string(LIBPATH, ':', LIBPATH_base)
-        else
-            env_mapping[LIBPATH_env] = LIBPATH
-        end
-    end
-    withenv(env_mapping...) do
-        f(ffprobe_path)
-    end
-end
-
+ffprobe(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true) =
+    executable_wrapper(f, ffprobe_path, PATH, LIBPATH, LIBPATH_env, LIBPATH_default, adjust_PATH, adjust_LIBPATH, ':')
 
 # Relative path to `libavcodec`
 const libavcodec_splitpath = ["lib", "libavcodec.so"]
@@ -207,6 +165,8 @@ libswscale_handle = C_NULL
 # This must be `const` so that we can use it with `ccall()`
 const libswscale = "libswscale.so.5"
 
+initialize_path_list!(PATH_list, (libass_jll.PATH_list, libfdk_aac_jll.PATH_list, FriBidi_jll.PATH_list, FreeType2_jll.PATH_list, LAME_jll.PATH_list, libvorbis_jll.PATH_list, Ogg_jll.PATH_list, x264_jll.PATH_list, x265_jll.PATH_list, Bzip2_jll.PATH_list, Zlib_jll.PATH_list, OpenSSL_jll.PATH_list, Opus_jll.PATH_list,))
+initialize_path_list!(LIBPATH_list, (libass_jll.LIBPATH_list, libfdk_aac_jll.LIBPATH_list, FriBidi_jll.LIBPATH_list, FreeType2_jll.LIBPATH_list, LAME_jll.LIBPATH_list, libvorbis_jll.LIBPATH_list, Ogg_jll.LIBPATH_list, x264_jll.LIBPATH_list, x265_jll.LIBPATH_list, Bzip2_jll.LIBPATH_list, Zlib_jll.LIBPATH_list, OpenSSL_jll.LIBPATH_list, Opus_jll.LIBPATH_list,))
 
 """
 Open all libraries
@@ -216,86 +176,38 @@ function __init__()
 
     # Initialize PATH and LIBPATH environment variable listings
     global PATH_list, LIBPATH_list
-    # From the list of our dependencies, generate a tuple of all the PATH and LIBPATH lists,
-    # then append them to our own.
-    foreach(p -> append!(PATH_list, p), (libass_jll.PATH_list, libfdk_aac_jll.PATH_list, FriBidi_jll.PATH_list, FreeType2_jll.PATH_list, LAME_jll.PATH_list, libvorbis_jll.PATH_list, Ogg_jll.PATH_list, x264_jll.PATH_list, x265_jll.PATH_list, Bzip2_jll.PATH_list, Zlib_jll.PATH_list, OpenSSL_jll.PATH_list, Opus_jll.PATH_list,))
-    foreach(p -> append!(LIBPATH_list, p), (libass_jll.LIBPATH_list, libfdk_aac_jll.LIBPATH_list, FriBidi_jll.LIBPATH_list, FreeType2_jll.LIBPATH_list, LAME_jll.LIBPATH_list, libvorbis_jll.LIBPATH_list, Ogg_jll.LIBPATH_list, x264_jll.LIBPATH_list, x265_jll.LIBPATH_list, Bzip2_jll.LIBPATH_list, Zlib_jll.LIBPATH_list, OpenSSL_jll.LIBPATH_list, Opus_jll.LIBPATH_list,))
 
-    global ffmpeg_path = normpath(joinpath(artifact_dir, ffmpeg_splitpath...))
+    global ffmpeg_path = get_exe_path!(PATH_list, artifact_dir, ffmpeg_splitpath)
+    global ffprobe_path = get_exe_path!(PATH_list, artifact_dir, ffprobe_splitpath)
 
-    push!(PATH_list, dirname(ffmpeg_path))
-    global ffprobe_path = normpath(joinpath(artifact_dir, ffprobe_splitpath...))
+    global libavcodec_path, libavcodec_handle
+    libavcodec_path, libavcodec_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libavcodec_splitpath)
 
-    push!(PATH_list, dirname(ffprobe_path))
-    global libavcodec_path = normpath(joinpath(artifact_dir, libavcodec_splitpath...))
+    global libavdevice_path, libavdevice_handle
+    libavdevice_path, libavdevice_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libavdevice_splitpath)
 
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libavcodec_handle = dlopen(libavcodec_path)
-    push!(LIBPATH_list, dirname(libavcodec_path))
+    global libavfilter_path, libavfilter_handle
+    libavfilter_path, libavfilter_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libavfilter_splitpath)
 
-    global libavdevice_path = normpath(joinpath(artifact_dir, libavdevice_splitpath...))
+    global libavformat_path, libavformat_handle
+    libavformat_path, libavformat_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libavformat_splitpath)
 
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libavdevice_handle = dlopen(libavdevice_path)
-    push!(LIBPATH_list, dirname(libavdevice_path))
+    global libavresample_path, libavresample_handle
+    libavresample_path, libavresample_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libavresample_splitpath)
 
-    global libavfilter_path = normpath(joinpath(artifact_dir, libavfilter_splitpath...))
+    global libavutil_path, libavutil_handle
+    libavutil_path, libavutil_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libavutil_splitpath)
 
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libavfilter_handle = dlopen(libavfilter_path)
-    push!(LIBPATH_list, dirname(libavfilter_path))
+    global libpostproc_path, libpostproc_handle
+    libpostproc_path, libpostproc_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libpostproc_splitpath)
 
-    global libavformat_path = normpath(joinpath(artifact_dir, libavformat_splitpath...))
+    global libswresample_path, libswresample_handle
+    libswresample_path, libswresample_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libswresample_splitpath)
 
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libavformat_handle = dlopen(libavformat_path)
-    push!(LIBPATH_list, dirname(libavformat_path))
+    global libswscale_path, libswscale_handle
+    libswscale_path, libswscale_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libswscale_splitpath)
 
-    global libavresample_path = normpath(joinpath(artifact_dir, libavresample_splitpath...))
-
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libavresample_handle = dlopen(libavresample_path)
-    push!(LIBPATH_list, dirname(libavresample_path))
-
-    global libavutil_path = normpath(joinpath(artifact_dir, libavutil_splitpath...))
-
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libavutil_handle = dlopen(libavutil_path)
-    push!(LIBPATH_list, dirname(libavutil_path))
-
-    global libpostproc_path = normpath(joinpath(artifact_dir, libpostproc_splitpath...))
-
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libpostproc_handle = dlopen(libpostproc_path)
-    push!(LIBPATH_list, dirname(libpostproc_path))
-
-    global libswresample_path = normpath(joinpath(artifact_dir, libswresample_splitpath...))
-
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libswresample_handle = dlopen(libswresample_path)
-    push!(LIBPATH_list, dirname(libswresample_path))
-
-    global libswscale_path = normpath(joinpath(artifact_dir, libswscale_splitpath...))
-
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libswscale_handle = dlopen(libswscale_path)
-    push!(LIBPATH_list, dirname(libswscale_path))
-
-    # Filter out duplicate and empty entries in our PATH and LIBPATH entries
-    filter!(!isempty, unique!(PATH_list))
-    filter!(!isempty, unique!(LIBPATH_list))
-    global PATH = join(PATH_list, ':')
-    global LIBPATH = join(vcat(LIBPATH_list, [joinpath(Sys.BINDIR, Base.LIBDIR, "julia"), joinpath(Sys.BINDIR, Base.LIBDIR)]), ':')
-
+    global PATH, LIBPATH
+    PATH, LIBPATH = cleanup_path_libpath!(PATH_list, LIBPATH_list, ':')
     
 end  # __init__()
-
